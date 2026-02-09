@@ -1,37 +1,74 @@
-use nom::branch::alt;
-use nom::bytes::complete::{tag, take_while1};
-use nom::character::complete::digit1;
-use nom::combinator::{map, recognize, opt, value};
-use nom::IResult;
-use nom::sequence::{delimited, pair, preceded};
+use nom::{
+    branch::alt,
+    bytes::complete::tag,
+    character::complete::{alphanumeric1, char, digit1, multispace0},
+    combinator::{map, map_res, opt, recognize},
+    multi::separated_list1,
+    sequence::{delimited, pair, preceded},
+    IResult,
+};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum JrFilter {
     Identity,
     Select(String),
-    Index(isize),
+    Index(i32),
 }
 
-fn is_key_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
+
+fn parse_dot(input: &str) -> IResult<&str, &str> {
+    tag(".")(input)
 }
 
-pub fn parse_identity(input: &str) -> IResult<&str, JrFilter> {
-    alt((
-        map(
+fn parse_select(input: &str) -> IResult<&str, JrFilter> {
+    map(
+        preceded(
+            parse_dot, 
+            recognize(pair(
+                alt((alphanumeric1, tag("_"))),
+                opt(recognize(many_alphanumeric_underscore))
+            ))
+        ), 
+        |s: &str| JrFilter::Select(s.to_string())
+    )(input)
+}
+
+fn many_alphanumeric_underscore(input: &str) -> IResult<&str, &str> {
+    recognize(nom::multi::many0(alt((alphanumeric1, tag("_")))))(input)
+}
+
+fn parse_index(input: &str) -> IResult<&str, JrFilter> {
+    map(
+        preceded(
+            parse_dot,
             delimited(
-                tag(".["),
-                recognize(pair(opt(tag("-")), digit1)),
-                tag("]")
-            ),
-            |s: &str| JrFilter::Index(s.parse().unwrap()),
+                char('['),
+                map_res(
+                    recognize(pair(opt(char('-')), digit1)),
+                    |s: &str| s.parse::<i32>()
+                ),
+                char(']')
+            )
         ),
+        JrFilter::Index
+    )(input)
+}
 
-        map(
-            preceded(tag("."), take_while1(is_key_char)),
-            |s: &str| JrFilter::Select(s.to_string()),
-        ),
+fn parse_identity(input: &str) -> IResult<&str, JrFilter> {
+    map(parse_dot, |_| JrFilter::Identity)(input)
+}
 
-        value(JrFilter::Identity, tag("."))
+fn parse_single_filter(input: &str) -> IResult<&str, JrFilter> {
+    alt((
+        parse_index,
+        parse_select,
+        parse_identity
     ))(input)
+}
+
+pub fn parse_query(input: &str) -> IResult<&str, Vec<JrFilter>> {
+    separated_list1(
+        delimited(multispace0, char('|'), multispace0), 
+        parse_single_filter
+    )(input)
 }

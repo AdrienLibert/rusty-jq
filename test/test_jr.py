@@ -1,28 +1,56 @@
-import rusty_jq
+import pytest
 import json
+import rusty_jq
 
-def test_process():
-    data = '{"user_id": 123, "role": "Data Engineer", "city": "Hong Kong"}'
+@pytest.fixture
+def complex_data():
+    return {
+        "metadata": {
+            "source": "payment_gateway",
+            "timestamp": 1700000000
+        },
+        "users": [
+            {
+                "id": 1,
+                "name": "John",
+                "profile": {"title": "Data Engineer", "location": "Hong Kong"},
+                "transactions": [
+                    {"id": 101, "amount": 500, "currency": "HKD"},
+                    {"id": 102, "amount": 1200, "currency": "USD"}
+                ]
+            },
+            {
+                "id": 2,
+                "name": "Bob",
+                "profile": {"title": "Manager", "location": "London"},
+                "transactions": []
+            }
+        ]
+    }
+
+@pytest.fixture
+def json_string(complex_data):
+    return json.dumps(complex_data)
+
+@pytest.mark.parametrize("query,expected", [
+    # 1. Deep Dive
+    (".users | .[0] | .profile | .location", "Hong Kong"),
     
-    result = rusty_jq.process(".", data)
-    print(result)
-
-    result = rusty_jq.process(".role", data)
-    print(result)
-
-    result = rusty_jq.process(".salary", data)
-    print(result)
-
-    data = '[{"user_id": 123, "role": "Data Engineer"}, {"user_id": 456, "role": "Manager"}]'
-
-    result = rusty_jq.process(".[0]", data)
-    print(result)
-
-    result = rusty_jq.process(".[-1]", data)
-    print(result)
-
-    result = rusty_jq.process(".[99]", data)
-    print(result)
-
-if __name__ == "__main__":
-    test_process()
+    # 2. Negative Indexing + Pipe
+    (".users | .[0] | .transactions | .[-1] | .amount", 1200),
+    
+    # 3. Empty Array Handling
+    (".users | .[1] | .transactions | .[0]", None),
+    
+    # 4. Safety Check
+    (".metadata | .source | .something", None),
+    
+    # 5. Root Object Access
+    (".metadata | .timestamp", 1700000000),
+])
+def test_jq_queries(complex_data, json_string, query, expected):
+    """
+    Runs the query against Python Dict and Native
+    """
+    assert rusty_jq.process(query, complex_data) == expected
+    assert rusty_jq.process(query, json_string) == expected
