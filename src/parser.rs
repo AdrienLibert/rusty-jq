@@ -3,7 +3,7 @@ use nom::{
     bytes::complete::tag,
     character::complete::{alphanumeric1, char, digit1, multispace0},
     combinator::{map, map_res, opt, recognize},
-    multi::separated_list1,
+    multi::{separated_list1, many0},
     sequence::{delimited, pair, preceded},
     IResult,
 };
@@ -13,6 +13,7 @@ pub enum JrFilter {
     Identity,
     Select(String),
     Index(i32),
+    Iterator,
 }
 
 
@@ -34,7 +35,7 @@ fn parse_select(input: &str) -> IResult<&str, JrFilter> {
 }
 
 fn many_alphanumeric_underscore(input: &str) -> IResult<&str, &str> {
-    recognize(nom::multi::many0(alt((alphanumeric1, tag("_")))))(input)
+    recognize(many0(alt((alphanumeric1, tag("_")))))(input)
 }
 
 fn parse_index(input: &str) -> IResult<&str, JrFilter> {
@@ -54,12 +55,20 @@ fn parse_index(input: &str) -> IResult<&str, JrFilter> {
     )(input)
 }
 
+fn parse_iterator(input: &str) -> IResult<&str, JrFilter> {
+    map(
+        preceded(parse_dot, tag("[]")),
+        |_| JrFilter::Iterator
+    )(input)
+}
+
 fn parse_identity(input: &str) -> IResult<&str, JrFilter> {
     map(parse_dot, |_| JrFilter::Identity)(input)
 }
 
 fn parse_single_filter(input: &str) -> IResult<&str, JrFilter> {
     alt((
+        parse_iterator,
         parse_index,
         parse_select,
         parse_identity

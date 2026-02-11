@@ -37,8 +37,7 @@ fn process(py: Python, query: &str, input_data: &PyAny) -> PyResult<PyObject> {
         }
 
     } else {
-        let result_ref = process_python_object(py, input_data, &filters)?;
-        Ok(result_ref.to_object(py))
+        process_python_object(py, input_data, &filters)
     }
 }
 

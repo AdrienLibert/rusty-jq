@@ -47,6 +47,9 @@ def json_string(complex_data):
     
     # 5. Root Object Access
     (".metadata | .timestamp", 1700000000),
+
+    # 6. Iterator
+    (".users | .[] | .id", [1, 2]),
 ])
 def test_jq_queries(complex_data, json_string, query, expected):
     """
