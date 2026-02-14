@@ -55,5 +55,24 @@ def test_jq_queries(complex_data, json_string, query, expected):
     """
     Runs the query against Python Dict and Native
     """
-    assert rusty_jq.process(query, complex_data) == expected
+    assert rusty_jq.process(query, json_string) == expected
+
+@pytest.mark.parametrize("query,expected", [
+    # 7. smaller object out of each user
+    (".users | .[] | {id: .id, loc: .profile | .location}", [
+        {"id": 1, "loc": "Hong Kong"},
+        {"id": 2, "loc": "London"},
+    ]),
+
+    # 8. nested constructor + selecting fields
+    (".users | .[0] | {name: .name, profile: {title: .profile | .title}}", {
+        "name": "John",
+        "profile": {"title": "Data Engineer"},
+    }),
+
+    # 9. constructor from root
+    (".metadata | {src: .source, ts: .timestamp}", {"src": "payment_gateway", "ts": 1700000000}),
+])
+
+def test_object_constructor_json_only(json_string, query, expected):
     assert rusty_jq.process(query, json_string) == expected

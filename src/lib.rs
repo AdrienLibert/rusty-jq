@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use pyo3::types::{PyAny};
+use pyo3::types::{PyAny, PyList};
 use serde_json::Value;
 use pythonize::pythonize;
 
@@ -25,19 +25,18 @@ fn process(py: Python, query: &str, input_data: &PyAny) -> PyResult<PyObject> {
         ));
     }
 
-    // dispatch and process inputdata
     if let Ok(json_str) = input_data.extract::<&str>() {
         let json_data: Value = serde_json::from_str(json_str)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-        
         let result = process_rust_value(&json_data, &filters);
-        match result {
-            Some(v) => Ok(pythonize(py, &v)?),
-            None => Ok(py.None()),
+        match result.as_slice() {
+            [] => Ok(py.None()),
+            [val] => Ok(pythonize(py, val)?.into_py(py)),
+            _ => {
+                let list = PyList::new(py, result.iter().map(|v| pythonize(py, v).unwrap()));
+                Ok(list.into_py(py))
+            }
         }
-
-    } else {
-        process_python_object(py, input_data, &filters)
     }
 }
 
