@@ -1,6 +1,7 @@
 import pytest
 import json
 import rusty_jq
+import jq
 
 @pytest.fixture
 def complex_data():
