@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyAny};
-use simd_json::BorrowedValue;
+use simd_json::{BorrowedValue, StaticNode};
 use std::borrow::Cow;
 
 mod parser;
@@ -11,11 +11,11 @@ use engine::process_rust_value;
 
 fn value_to_py(py: Python, val: &BorrowedValue) -> PyResult<PyObject> {
     match val {
-        BorrowedValue::Static(simd_json::StaticNode::Null) => Ok(py.None()),
-        BorrowedValue::Static(simd_json::StaticNode::Bool(b)) => Ok(b.into_py(py)),
-        BorrowedValue::Static(simd_json::StaticNode::I64(i)) => Ok(i.into_py(py)),
-        BorrowedValue::Static(simd_json::StaticNode::U64(u)) => Ok(u.into_py(py)),
-        BorrowedValue::Static(simd_json::StaticNode::F64(f)) => Ok(f.into_py(py)),
+        BorrowedValue::Static(StaticNode::Null) => Ok(py.None()),
+        BorrowedValue::Static(StaticNode::Bool(b)) => Ok(b.into_py(py)),
+        BorrowedValue::Static(StaticNode::I64(i)) => Ok(i.into_py(py)),
+        BorrowedValue::Static(StaticNode::U64(u)) => Ok(u.into_py(py)),
+        BorrowedValue::Static(StaticNode::F64(f)) => Ok(f.into_py(py)),
         
         BorrowedValue::String(s) => Ok(s.as_ref().into_py(py)),
         

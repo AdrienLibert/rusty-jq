@@ -4,7 +4,6 @@ import statistics
 import jq
 import rusty_jq
 
-# 1. Setup Data
 DATA = {
     "metadata": {"source": "payment_gateway", "timestamp": 1700000000},
     "users": [
@@ -23,7 +22,7 @@ DATA = {
             "profile": {"title": "Manager", "location": "London"},
             "transactions": [],
         },
-    ] * 100,
+    ] * 10000,
 }
 
 JSON_TEXT = json.dumps(DATA)

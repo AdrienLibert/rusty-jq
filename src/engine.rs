@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 use simd_json::BorrowedValue;
 use simd_json::borrowed::Object; 
-use simd_json::prelude::*;       
+use simd_json::prelude::*;
+     
 use crate::parser::JrFilter;
 
 pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[JrFilter]) -> Vec<Cow<'a, BorrowedValue<'a>>> {
@@ -28,7 +29,6 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[JrFil
                         Cow::Owned(o_val) => {
                             if let Some(obj) = o_val.as_object() {
                                 if let Some(child) = obj.get(key.as_str()) {
-                                    // Must clone because we are extracting from an owned struct
                                     next_results.push(Cow::Owned(child.clone()));
                                 }
                             }
@@ -75,9 +75,6 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[JrFil
                     let mut product_objects: Vec<Object> = vec![Object::new()];
 
                     for (key, sub_query) in pairs {
-                        // CHANGE 3: RECURSION FIX
-                        // We pass a CLONE of the Cow. This is safe and relatively cheap.
-                        // It allows the recursive function to own its input.
                         let field_results = process_rust_value(value.clone(), sub_query);
 
                         if field_results.is_empty() {
