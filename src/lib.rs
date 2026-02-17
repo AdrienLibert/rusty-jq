@@ -1,10 +1,10 @@
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyAny};
+use pyo3::types::{PyDict, PyList};
 use simd_json::{BorrowedValue, StaticNode};
 use std::borrow::Cow;
 
 mod parser;
-use parser::parse_query;
+use parser::{parse_query, JrFilter};
 
 mod engine;
 use engine::process_rust_value;
@@ -35,43 +35,51 @@ fn value_to_py(py: Python, val: &BorrowedValue) -> PyResult<PyObject> {
     }
 }
 
-#[pyfunction]
-fn process(py: Python, query: &str, input_data: &PyAny) -> PyResult<PyObject> {
+#[pyclass]
+struct JqProgram {
+    filters: Vec<JrFilter>,
+}
 
+#[pymethods]
+impl JqProgram {
+    fn input(&self, py: Python, json_text: &str) -> PyResult<PyObject> {
+        let mut bytes = json_text.as_bytes().to_vec();
+        
+        let json_data = simd_json::to_borrowed_value(&mut bytes)
+             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+
+        let result = process_rust_value(Cow::Borrowed(&json_data), &self.filters);
+
+        match result.as_slice() {
+            [] => Ok(py.None()),
+            [val] => value_to_py(py, &*val),
+            _ => {
+                let items: PyResult<Vec<PyObject>> = result.iter()
+                    .map(|v| value_to_py(py, &*v))
+                    .collect();
+                Ok(PyList::new(py, items?).into_py(py))
+            }
+        }
+    }
+}
+
+#[pyfunction]
+fn compile(query: &str) -> PyResult<JqProgram> {
     let (remaining, filters) = match parse_query(query) {
         Ok(x) => x,
-        Err(_) => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid query syntax")),
+        Err(e) => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid query syntax: {}", e))),
     };
 
     if !remaining.trim().is_empty() {
         return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Extra chars"));
     }
 
-    if let Ok(json_str) = input_data.extract::<&str>() {
-        let mut bytes = json_str.as_bytes().to_vec();
-        
-        let json_data = simd_json::to_borrowed_value(&mut bytes)
-             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-
-        let result = process_rust_value(Cow::Borrowed(&json_data), &filters);
-
-        match result.as_slice() {
-            [] => Ok(py.None()),
-            [val] => value_to_py(py, &*val),
-            _ => {
-                let list = PyList::new(py, result.iter().map(|v| {
-                    value_to_py(py, &*v).unwrap()
-                }));
-                Ok(list.into_py(py))
-            }
-        }
-    } else {
-        Ok(py.None())
-    }
+    Ok(JqProgram { filters })
 }
 
 #[pymodule]
-fn rusty_jq(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(process, m)?)?;
+fn rusty(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(compile, m)?)?;
+    m.add_class::<JqProgram>()?;
     Ok(())
 }

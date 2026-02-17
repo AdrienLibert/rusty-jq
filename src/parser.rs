@@ -25,7 +25,7 @@ fn parse_dot(input: &str) -> IResult<&str, &str> {
 fn parse_word(input: &str) -> IResult<&str, &str> {
     recognize(pair(
         alt((alphanumeric1, tag("_"))),
-        opt(recognize(many0(alt((alphanumeric1, tag("_"))))))
+        opt(recognize(many0(alt((alphanumeric1, tag("_"), tag("-"))))))
     ))(input)
 }
 

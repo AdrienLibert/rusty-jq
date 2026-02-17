@@ -1,6 +1,6 @@
 import pytest
 import json
-import rusty_jq
+import rusty
 import jq
 
 @pytest.fixture
@@ -53,10 +53,7 @@ def json_string(complex_data):
     (".users | .[] | .id", [1, 2]),
 ])
 def test_jq_queries(complex_data, json_string, query, expected):
-    """
-    Runs the query against Python Dict and Native
-    """
-    assert rusty_jq.process(query, json_string) == expected
+    assert rusty.compile(query).input(json_string) == expected
 
 @pytest.mark.parametrize("query,expected", [
     # 7. smaller object out of each user
@@ -76,4 +73,4 @@ def test_jq_queries(complex_data, json_string, query, expected):
 ])
 
 def test_object_constructor_json_only(json_string, query, expected):
-    assert rusty_jq.process(query, json_string) == expected
+    assert rusty.compile(query).input(json_string) == expected

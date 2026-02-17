@@ -2,7 +2,7 @@ import json
 import time
 import statistics
 import jq
-import rusty_jq
+import rusty
 
 DATA = {
     "metadata": {"source": "payment_gateway", "timestamp": 1700000000},
@@ -22,7 +22,7 @@ DATA = {
             "profile": {"title": "Manager", "location": "London"},
             "transactions": [],
         },
-    ] * 10000,
+    ] * 5000,
 }
 
 JSON_TEXT = json.dumps(DATA)
@@ -70,7 +70,7 @@ def run_comparison():
             return list(jq.compile(query).input(text=JSON_TEXT))
 
         def run_rusty():
-            return rusty_jq.process(query, JSON_TEXT)
+            return rusty.compile(query).input(JSON_TEXT)
 
         try:
             res_jq = run_jq()
