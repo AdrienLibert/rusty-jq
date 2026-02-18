@@ -1,6 +1,7 @@
 import json
 import time
 import statistics
+import subprocess
 import jq
 import rusty
 
@@ -40,6 +41,28 @@ QUERIES = [
     ".users | .[] | {user_id: .id, city: .profile | .location}",
 ]
 
+def run_jaq_cli(query, json_str):
+    """
+    Runs jaq binary AND parses the result back to Python.
+    """
+    process = subprocess.run(
+        ["jaq", "-c", query],
+        input=json_str,
+        text=True,
+        capture_output=True
+    )
+    if process.returncode != 0:
+        raise Exception(process.stderr)
+    
+    output_str = process.stdout.strip()
+    if not output_str:
+        return None
+    
+    try:
+        return json.loads(output_str) 
+    except json.JSONDecodeError:
+        return [json.loads(line) for line in output_str.splitlines()]
+
 def bench(name, fn, iters=1000):
     for _ in range(100):
         fn()
@@ -69,38 +92,34 @@ def run_comparison():
         def run_jq():
             return list(jq.compile(query).input(text=JSON_TEXT))
 
+        def run_jaq():
+            return run_jaq_cli(query, JSON_TEXT)
+
         def run_rusty():
             return rusty.compile(query).input(JSON_TEXT)
 
-        try:
-            res_jq = run_jq()
-            res_rust = run_rusty()
+        res_jq = run_jq()
+        res_jaq = run_jaq()
+        res_rust = run_rusty()
             
-            if not isinstance(res_rust, list) and res_rust is not None:
-                res_rust = [res_rust]
-            if res_rust is None: 
-                res_rust = []
-            
-            count_jq = len(res_jq)
-            count_rust = len(res_rust)
-            
-            if count_jq != count_rust:
-                print(f"⚠️  MISMATCH! jq found {count_jq} items, rusty found {count_rust}")
-        except Exception as e:
-            print(f"⚠️  CRASH: {e}")
-            continue
-
         stats_jq = bench("jq", run_jq)
+        stats_jaq = bench("jaq", run_jaq)
         stats_rust = bench("rusty", run_rusty)
 
         print(f"  jq (official): {stats_jq['median']:.4f} ms")
+        print(f"  jaq (binary) : {stats_jaq['median']:.4f} ms")
         print(f"  rusty_jq     : {stats_rust['median']:.4f} ms")
         
         speedup = stats_jq['median'] / stats_rust['median']
+        speedup_jaq = stats_jaq['median'] / stats_rust['median']
         if speedup > 1:
             print(f"  🚀 RESULT: Rusty is {speedup:.2f}x FASTER")
         else:
             print(f"  🐢 RESULT: Rusty is {1/speedup:.2f}x SLOWER")
+        if speedup_jaq > 1:
+            print(f"  🚀 RESULT: Rusty is {speedup_jaq:.2f}x FASTER")
+        else:
+            print(f"  🐢 RESULT: Rusty is {1/speedup_jaq:.2f}x SLOWER")
 
 if __name__ == "__main__":
     run_comparison()

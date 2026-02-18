@@ -4,11 +4,14 @@ use simd_json::{BorrowedValue, StaticNode};
 use std::borrow::Cow;
 
 mod parser;
-use parser::{parse_query, JrFilter};
+use parser::{parse_query, RustyFilter};
 
 mod engine;
 use engine::process_rust_value;
 
+// Converts a simd-json BorrowedValue into a native Python object
+// operates on zero-copy references
+// Python allocation happens at the end, so hot path stays allocation-free
 fn value_to_py(py: Python, val: &BorrowedValue) -> PyResult<PyObject> {
     match val {
         BorrowedValue::Static(StaticNode::Null) => Ok(py.None()),
@@ -35,21 +38,24 @@ fn value_to_py(py: Python, val: &BorrowedValue) -> PyResult<PyObject> {
     }
 }
 
+// compiled jq-style query, exposed to Python as RustyProgram
 #[pyclass]
-struct JqProgram {
-    filters: Vec<JrFilter>,
+struct RustyProgram {
+    filters: Vec<RustyFilter>,
 }
 
 #[pymethods]
-impl JqProgram {
+impl RustyProgram {
+    // execute compiled query against given JSON text
     fn input(&self, py: Python, json_text: &str) -> PyResult<PyObject> {
+        // converts string into a mutable buffer of bytes
         let mut bytes = json_text.as_bytes().to_vec();
-        
+        // parse the buffer in place and returns a BorrowedValue
         let json_data = simd_json::to_borrowed_value(&mut bytes)
              .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-
+        // run filter pipeline
         let result = process_rust_value(Cow::Borrowed(&json_data), &self.filters);
-
+        // unwrapping the result
         match result.as_slice() {
             [] => Ok(py.None()),
             [val] => value_to_py(py, &*val),
@@ -64,22 +70,25 @@ impl JqProgram {
 }
 
 #[pyfunction]
-fn compile(query: &str) -> PyResult<JqProgram> {
+fn compile(query: &str) -> PyResult<RustyProgram> {
+    // returns IResult<&str, Vec<RustyFilter>>
     let (remaining, filters) = match parse_query(query) {
         Ok(x) => x,
         Err(e) => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid query syntax: {}", e))),
     };
 
+    // ensure the parser consumed the entire query string
     if !remaining.trim().is_empty() {
         return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Extra chars"));
     }
 
-    Ok(JqProgram { filters })
+    Ok(RustyProgram { filters })
 }
 
+/// PyO3 module initialisation (entry-point)
 #[pymodule]
 fn rusty(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(compile, m)?)?;
-    m.add_class::<JqProgram>()?;
+    m.add_class::<RustyProgram>()?;
     Ok(())
 }

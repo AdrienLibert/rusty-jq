@@ -45,3 +45,7 @@ A **blazing-fast** jq-like JSON query engine for Python, written in Rust.
 | `engine.rs` | Execution engine — walks the parsed filter chain over `simd_json::BorrowedValue` using `Cow` for zero-copy traversal |
 
 ---
+
+## 📄 License
+
+MIT

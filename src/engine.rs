@@ -3,10 +3,11 @@ use simd_json::BorrowedValue;
 use simd_json::borrowed::Object; 
 use simd_json::prelude::*;
      
-use crate::parser::JrFilter;
+use crate::parser::RustyFilter;
 
-pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[JrFilter]) -> Vec<Cow<'a, BorrowedValue<'a>>> {
-    
+// applies a chain of RustyFilter to a JSON value and returns all matching results
+pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[RustyFilter]) -> Vec<Cow<'a, BorrowedValue<'a>>> {
+    // seed the pipeline with the root value
     let mut current_results: Vec<Cow<'a, BorrowedValue<'a>>> = vec![root];
 
     for filter in filters {
@@ -14,11 +15,12 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[JrFil
 
         for value in current_results {
             match filter {
-                JrFilter::Identity => {
+                RustyFilter::Identity => {
                     next_results.push(value);
                 },
-                JrFilter::Select(key) => {
+                RustyFilter::Select(key) => {
                     match value {
+                        // borrowed path, hand out a sub-reference without cloning
                         Cow::Borrowed(b_val) => {
                             if let Some(obj) = b_val.as_object() {
                                 if let Some(child) = obj.get(key.as_str()) {
@@ -26,6 +28,7 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[JrFil
                                 }
                             }
                         },
+                        // owned path, the child must be cloned out of the owned object
                         Cow::Owned(o_val) => {
                             if let Some(obj) = o_val.as_object() {
                                 if let Some(child) = obj.get(key.as_str()) {
@@ -35,7 +38,7 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[JrFil
                         }
                     }
                 },
-                JrFilter::Index(idx) => {
+                RustyFilter::Index(idx) => {
                     match value {
                         Cow::Borrowed(b_val) => {
                             if let Some(arr) = b_val.as_array() {
@@ -57,13 +60,15 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[JrFil
                         }
                     }
                 },
-                JrFilter::Iterator => {
+                RustyFilter::Iterator => {
                     match value {
+                        // borrows from the parse buffer
                         Cow::Borrowed(b_val) => {
                             if let Some(arr) = b_val.as_array() {
                                 next_results.extend(arr.iter().map(|v| Cow::Borrowed(v)));
                             }
                         },
+                        // the parent is an owned temporary
                         Cow::Owned(o_val) => {
                             if let Some(arr) = o_val.as_array() {
                                 next_results.extend(arr.iter().cloned().map(|v| Cow::Owned(v)));
@@ -71,12 +76,14 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[JrFil
                         }
                     }
                 },
-                JrFilter::Object(pairs) => {
+                RustyFilter::Object(pairs) => {
                     let mut product_objects: Vec<Object> = vec![Object::new()];
 
                     for (key, sub_query) in pairs {
+                        // recursively evaluate the sub-query for this field.
                         let field_results = process_rust_value(value.clone(), sub_query);
 
+                        // if any field yields no results the whole object is dropped
                         if field_results.is_empty() {
                             product_objects.clear();
                             break; 

@@ -8,15 +8,15 @@ use nom::{
     IResult,
 };
 
+// Represents filters operation in a jq-style query
 #[derive(Debug, Clone)]
-pub enum JrFilter {
+pub enum RustyFilter {
     Identity,
     Select(String),
     Index(i32),
     Iterator,
-    Object(Vec<(String, Vec<JrFilter>)>),
+    Object(Vec<(String, Vec<RustyFilter>)>),
 }
-
 
 fn parse_dot(input: &str) -> IResult<&str, &str> {
     tag(".")(input)
@@ -28,18 +28,17 @@ fn parse_word(input: &str) -> IResult<&str, &str> {
         opt(recognize(many0(alt((alphanumeric1, tag("_"), tag("-"))))))
     ))(input)
 }
-
-fn parse_select(input: &str) -> IResult<&str, JrFilter> {
+fn parse_select(input: &str) -> IResult<&str, RustyFilter> {
     map(
         preceded(
             parse_dot, 
             parse_word
         ), 
-        |s: &str| JrFilter::Select(s.to_string())
+        |s: &str| RustyFilter::Select(s.to_string())
     )(input)
 }
 
-fn parse_index(input: &str) -> IResult<&str, JrFilter> {
+fn parse_index(input: &str) -> IResult<&str, RustyFilter> {
     map(
         preceded(
             parse_dot,
@@ -52,22 +51,22 @@ fn parse_index(input: &str) -> IResult<&str, JrFilter> {
                 char(']')
             )
         ),
-        JrFilter::Index
+        RustyFilter::Index
     )(input)
 }
 
-fn parse_iterator(input: &str) -> IResult<&str, JrFilter> {
+fn parse_iterator(input: &str) -> IResult<&str, RustyFilter> {
     map(
         preceded(parse_dot, tag("[]")),
-        |_| JrFilter::Iterator
+        |_| RustyFilter::Iterator
     )(input)
 }
 
-fn parse_identity(input: &str) -> IResult<&str, JrFilter> {
-    map(parse_dot, |_| JrFilter::Identity)(input)
+fn parse_identity(input: &str) -> IResult<&str, RustyFilter> {
+    map(parse_dot, |_| RustyFilter::Identity)(input)
 }
 
-fn parse_key_value_pair(input: &str) -> IResult<&str, (String, Vec<JrFilter>)> {
+fn parse_key_value_pair(input: &str) -> IResult<&str, (String, Vec<RustyFilter>)> {
     map(
         separated_pair(
             parse_word,
@@ -78,7 +77,7 @@ fn parse_key_value_pair(input: &str) -> IResult<&str, (String, Vec<JrFilter>)> {
     )(input)
 }
 
-fn parse_object(input: &str) -> IResult<&str, JrFilter> {
+fn parse_object(input: &str) -> IResult<&str, RustyFilter> {
     map(
         delimited(
             char('{'),
@@ -92,11 +91,12 @@ fn parse_object(input: &str) -> IResult<&str, JrFilter> {
             ),
             char('}')
         ),
-        JrFilter::Object
+        RustyFilter::Object
     )(input)
 }
 
-fn parse_single_filter(input: &str) -> IResult<&str, JrFilter> {
+// parses any single filter token
+fn parse_single_filter(input: &str) -> IResult<&str, RustyFilter> {
     alt((
         parse_iterator,
         parse_index,
@@ -106,7 +106,8 @@ fn parse_single_filter(input: &str) -> IResult<&str, JrFilter> {
     ))(input)
 }
 
-pub fn parse_query(input: &str) -> IResult<&str, Vec<JrFilter>> {
+// parses a full jq-style query string into a list of RustyFilter
+pub fn parse_query(input: &str) -> IResult<&str, Vec<RustyFilter>> {
     separated_list1(
         delimited(multispace0, char('|'), multispace0), 
         parse_single_filter
