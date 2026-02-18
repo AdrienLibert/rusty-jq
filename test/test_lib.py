@@ -1,6 +1,6 @@
 import pytest
 import json
-import rusty
+import rusty-jq
 import jq
 
 @pytest.fixture

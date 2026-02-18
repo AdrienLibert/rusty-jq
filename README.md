@@ -20,8 +20,7 @@ A **blazing-fast** jq-like JSON query engine for Python, written in Rust.
 ### Prerequisites
 
 - Python ≥ 3.7
-- Rust toolchain (for building from source)
-- [Maturin](https://github.com/PyO3/maturin)
+- pip install rusty-jq
 
 ### Supported Filters
 

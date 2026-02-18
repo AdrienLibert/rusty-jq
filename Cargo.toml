@@ -1,11 +1,11 @@
 [package]
-name = "rusty"
+name = "rusty-jq"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "rusty"
+name = "rusty_jq"
 crate-type = ["cdylib"]
 
 [dependencies]

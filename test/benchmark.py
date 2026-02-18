@@ -3,7 +3,7 @@ import time
 import statistics
 import subprocess
 import jq
-import rusty
+import rusty-jq
 
 DATA = {
     "metadata": {"source": "payment_gateway", "timestamp": 1700000000},

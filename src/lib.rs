@@ -9,7 +9,7 @@ use parser::{parse_query, RustyFilter};
 mod engine;
 use engine::process_rust_value;
 
-// Converts a simd-json BorrowedValue into a native Python object
+// converts a simd-json BorrowedValue into a native Python object
 // operates on zero-copy references
 // Python allocation happens at the end, so hot path stays allocation-free
 fn value_to_py(py: Python, val: &BorrowedValue) -> PyResult<PyObject> {
@@ -85,9 +85,9 @@ fn compile(query: &str) -> PyResult<RustyProgram> {
     Ok(RustyProgram { filters })
 }
 
-/// PyO3 module initialisation (entry-point)
+// PyO3 module initialisation (entry-point)
 #[pymodule]
-fn rusty(_py: Python, m: &PyModule) -> PyResult<()> {
+fn rusty_jq(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(compile, m)?)?;
     m.add_class::<RustyProgram>()?;
     Ok(())
