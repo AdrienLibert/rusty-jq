@@ -38,6 +38,22 @@ fn value_to_py(py: Python, val: &BorrowedValue) -> PyResult<PyObject> {
     }
 }
 
+#[pyclass]
+pub struct RustyJqIter {
+    items: std::vec::IntoIter<PyObject>,
+}
+
+#[pymethods]
+impl RustyJqIter {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyObject> {
+        slf.items.next()
+    }
+}
+
 // compiled jq-style query, exposed to Python as RustyProgram
 #[pyclass]
 struct RustyProgram {
@@ -47,7 +63,7 @@ struct RustyProgram {
 #[pymethods]
 impl RustyProgram {
     // execute compiled query against given JSON text
-    fn input(&self, py: Python, json_text: &str) -> PyResult<PyObject> {
+    fn input(&self, py: Python, json_text: &str) -> PyResult<RustyJqIter> {
         // converts string into a mutable buffer of bytes
         let mut bytes = json_text.as_bytes().to_vec();
         // parse the buffer in place and returns a BorrowedValue
@@ -55,17 +71,15 @@ impl RustyProgram {
              .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
         // run filter pipeline
         let result = process_rust_value(Cow::Borrowed(&json_data), &self.filters);
-        // unwrapping the result
-        match result.as_slice() {
-            [] => Ok(py.None()),
-            [val] => value_to_py(py, &*val),
-            _ => {
-                let items: PyResult<Vec<PyObject>> = result.iter()
-                    .map(|v| value_to_py(py, &*v))
-                    .collect();
-                Ok(PyList::new(py, items?).into_py(py))
-            }
-        }
+        // convert each item to PyObject
+        let items: PyResult<Vec<PyObject>> = result.iter()
+            .map(|v| value_to_py(py, &*v))
+            .collect();
+            
+        // Return the Iterator
+        Ok(RustyJqIter { 
+            items: items?.into_iter() 
+        })
     }
 }
 
@@ -90,5 +104,6 @@ fn compile(query: &str) -> PyResult<RustyProgram> {
 fn rusty_jq(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(compile, m)?)?;
     m.add_class::<RustyProgram>()?;
+    m.add_class::<RustyJqIter>()?;
     Ok(())
 }

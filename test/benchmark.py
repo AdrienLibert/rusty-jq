@@ -96,7 +96,7 @@ def run_comparison():
             return run_jaq_cli(query, JSON_TEXT)
 
         def run_rusty():
-            return rusty.compile(query).input(JSON_TEXT)
+            return list(rusty.compile(query).input(JSON_TEXT))
 
         res_jq = run_jq()
         res_jaq = run_jaq()
