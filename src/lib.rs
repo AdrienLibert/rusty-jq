@@ -81,6 +81,20 @@ impl RustyProgram {
             items: items?.into_iter() 
         })
     }
+    fn first(&self, py: Python, json_text: &str) -> PyResult<PyObject> {
+        // converts string into a mutable buffer of bytes
+        let mut bytes = json_text.as_bytes().to_vec();
+        // parse the buffer in place and returns a BorrowedValue
+        let json_data = simd_json::to_borrowed_value(&mut bytes)
+             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+        // run filter pipeline
+        let result = process_rust_value(Cow::Borrowed(&json_data), &self.filters);
+        // grab only the very first match, avoiding overhead
+        match result.first() {
+            Some(val) => value_to_py(py, &*val),
+            None => Ok(py.None()),
+        }
+    }
 }
 
 #[pyfunction]
