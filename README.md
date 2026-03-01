@@ -2,7 +2,7 @@
 
 A **blazing-fast** jq-like JSON query engine for Python, written in Rust.
 
-`rusty-jq` compiles jq filter expressions into an optimized Rust pipeline and processes JSON using [simd-json] for accelerated parsing — delivering **up to 9x lower latency** than the standard `jq` Python bindings.
+`rusty-jq` compiles jq filter expressions into an optimized Rust pipeline and processes JSON using [simd-json] for SIMD-accelerated parsing — delivering **up to 9x lower latency** than the standard `jq` Python bindings.
 
 ---
 
@@ -59,12 +59,12 @@ print(first_match) # "John"
 
 | Query | `jq` (official) | `jaq` (binary) | `rusty_jq` | Speedup vs `jq` |
 | --- | --- | --- | --- | --- |
-| `.metadata | .timestamp` | 65.4 ms | 24.5 ms | **7.8 ms** | 🚀 **8.4x** |
-| `.users | .[0] | .profile | .location` | 63.8 ms | 25.4 ms | **7.1 ms** | 🚀 **8.9x** |
-| `.users | .[0] | .transactions | .[-1] | .amount` | 63.5 ms | 24.4 ms | **7.0 ms** | 🚀 **9.1x** |
-| `.users | .[] | .id` | 69.9 ms | 39.1 ms | **8.3 ms** | 🚀 **8.4x** |
-| `.users | .[] | {user_id: .id}` | 96.0 ms | 57.5 ms | **16.9 ms** | 🚀 **5.7x** |
-| `.users | .[] | select(.id == 1)` | 84.6 ms | 50.0 ms | **10.9 ms** | 🚀 **7.7x** |
+| `.metadata \| .timestamp` | 65.4 ms | 24.5 ms | **7.8 ms** | 🚀 **8.4x** |
+| `.users \| .[0] \| .profile \| .location` | 63.8 ms | 25.4 ms | **7.1 ms** | 🚀 **8.9x** |
+| `.users \| .[0] \| .transactions \| .[-1] \| .amount` | 63.5 ms | 24.4 ms | **7.0 ms** | 🚀 **9.1x** |
+| `.users \| .[] \| .id` | 69.9 ms | 39.1 ms | **8.3 ms** | 🚀 **8.4x** |
+| `.users \| .[] \| {user_id: .id}` | 96.0 ms | 57.5 ms | **16.9 ms** | 🚀 **5.7x** |
+| `.users \| .[] \| select(.id == 1)` | 84.6 ms | 50.0 ms | **10.9 ms** | 🚀 **7.7x** |
 
 ---
 
@@ -76,7 +76,7 @@ print(first_match) # "John"
 | **Field access** | `.field` | Select a key from an object |
 | **Index** | `.[n]` | Access an array element (supports negative indices) |
 | **Iterator** | `.[]` | Iterate over all elements of an array |
-| **Pipe** | `|` | Chain filters together |
+| **Pipe** | `\|` | Chain filters together |
 | **Select** | `select(.amount > 10)` | Filter items based on boolean conditions (`==`, `!=`, `>`, `<`, `>=`, `<=`) |
 | **Object construction** | `{key: .field}` | Build a new object from selected fields |
 
