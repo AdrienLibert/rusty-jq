@@ -3,7 +3,46 @@ use simd_json::BorrowedValue;
 use simd_json::borrowed::Object; 
 use simd_json::prelude::*;
      
-use crate::parser::RustyFilter;
+use crate::parser::{RustyFilter, CompareOp, Literal};
+
+// raw math
+fn apply_op<T: PartialOrd + PartialEq>(a: &T, b: &T, op: &CompareOp) -> bool {
+    match op {
+        CompareOp::Eq => a == b,
+        CompareOp::Neq => a != b,
+        CompareOp::Gt => a > b,
+        CompareOp::Lt => a < b,
+        CompareOp::Gte => a >= b,
+        CompareOp::Lte => a <= b,
+    }
+}
+
+// match simd-json's types against our Literal types
+fn evaluate_condition(val: &BorrowedValue, op: &CompareOp, lit: &Literal) -> bool {
+    match (val, lit) {
+        // Integer comparison
+        (BorrowedValue::Static(StaticNode::I64(v)), Literal::Int(l)) => apply_op(v, l, op),
+        (BorrowedValue::Static(StaticNode::U64(v)), Literal::Int(l)) => {
+            let v_as_i64 = *v as i64; // basic comparisons
+            apply_op(&v_as_i64, l, op)
+        },
+
+        // Float comparison
+        (BorrowedValue::Static(StaticNode::F64(v)), Literal::Float(l)) => apply_op(v, l, op),
+        
+        // string comparison
+        (BorrowedValue::String(v), Literal::String(l)) => apply_op(&v.as_ref(), &l.as_str(), op),
+        
+        // boolean comparison
+        (BorrowedValue::Static(StaticNode::Bool(v)), Literal::Bool(l)) => apply_op(v, l, op),
+        
+        // null comparison (Only == and != make sense for null)
+        (BorrowedValue::Static(StaticNode::Null), Literal::Null) => matches!(op, CompareOp::Eq),
+        
+        // if types completely mismatch, drop it
+        _ => false,
+    }
+}
 
 // applies a chain of RustyFilter to a JSON value and returns all matching results
 pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[RustyFilter]) -> Vec<Cow<'a, BorrowedValue<'a>>> {
@@ -18,7 +57,7 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[Rusty
                 RustyFilter::Identity => {
                     next_results.push(value);
                 },
-                RustyFilter::Select(key) => {
+                RustyFilter::Field(key) => {
                     match value {
                         // borrowed path, hand out a sub-reference without cloning
                         Cow::Borrowed(b_val) => {
@@ -105,6 +144,18 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[Rusty
 
                     for obj in product_objects {
                         next_results.push(Cow::Owned(BorrowedValue::Object(Box::new(obj))));
+                    }
+                }
+                RustyFilter::Select(path_filters, op, literal) => {
+                    // run the left-side path against the current value
+                    let test_results = process_rust_value(value.clone(), path_filters);
+                    // check if the extracted value matches our literal
+                    let passes = test_results.first().map_or(false, |test_val| {
+                    evaluate_condition(test_val, op, literal)
+                    });
+                    // if it passes, KEEP the original b_val
+                    if passes {
+                        next_results.push(value);
                     }
                 }
             }

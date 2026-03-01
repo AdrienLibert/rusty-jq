@@ -3,7 +3,7 @@ import time
 import statistics
 import subprocess
 import jq
-import rusty-jq
+import rusty_jq
 
 DATA = {
     "metadata": {"source": "payment_gateway", "timestamp": 1700000000},
@@ -39,6 +39,8 @@ QUERIES = [
     ".users | .[] | .id",
     # Constructor
     ".users | .[] | {user_id: .id, city: .profile | .location}",
+    # Select
+    ".users | .[] | select(.id == 1) | .name",
 ]
 
 def run_jaq_cli(query, json_str):
@@ -96,8 +98,7 @@ def run_comparison():
             return run_jaq_cli(query, JSON_TEXT)
 
         def run_rusty():
-            return list(rusty.compile(query).input(JSON_TEXT))
-
+            return list(rusty_jq.compile(query).input(JSON_TEXT))
         res_jq = run_jq()
         res_jaq = run_jaq()
         res_rust = run_rusty()

@@ -51,6 +51,18 @@ def json_string(complex_data):
 
     # 6. Iterator
     (".users | .[] | .id", [1, 2]),
+    
+    # 7. Simple Select, keep only the user with ID 1
+    (".users | .[] | select(.id == 1) | .name", ["John"]),
+
+    # 8. Select with nested path, keep only the user living in London
+    (".users | .[] | select(.profile.location == \"London\") | .name", ["Bob"]),
+
+    # 9. Select inside an array with math, find transactions over $1000
+    (".users | .[0] | .transactions | .[] | select(.amount > 1000) | .currency", ["USD"]),
+
+    # 10. Select matching nothing, look for an ID that doesn't exist
+    (".users | .[] | select(.id == 999) | .name", []),
 ])
 def test_jq_queries(complex_data, json_string, query, expected):
     program = rusty_jq.compile(query)
@@ -61,19 +73,19 @@ def test_jq_queries(complex_data, json_string, query, expected):
         assert program.first(json_string) == expected
 
 @pytest.mark.parametrize("query,expected", [
-    # 7. smaller object out of each user
+    # 11. smaller object out of each user
     (".users | .[] | {id: .id, loc: .profile | .location}", [
         {"id": 1, "loc": "Hong Kong"},
         {"id": 2, "loc": "London"},
     ]),
 
-    # 8. nested constructor + selecting fields
+    # 12. nested constructor + selecting fields
     (".users | .[0] | {name: .name, profile: {title: .profile | .title}}", {
         "name": "John",
         "profile": {"title": "Data Engineer"},
     }),
 
-    # 9. constructor from root
+    # 13. constructor from root
     (".metadata | {src: .source, ts: .timestamp}", {"src": "payment_gateway", "ts": 1700000000}),
 ])
 
