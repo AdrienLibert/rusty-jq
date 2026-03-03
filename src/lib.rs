@@ -23,10 +23,10 @@ fn value_to_py(py: Python, val: &BorrowedValue) -> PyResult<PyObject> {
         BorrowedValue::String(s) => Ok(s.as_ref().into_py(py)),
         
         BorrowedValue::Array(arr) => {
-            let list = PyList::new(py, arr.iter().map(|item| {
-                value_to_py(py, item).unwrap()
-            }));
-            Ok(list.into())
+            let items: PyResult<Vec<PyObject>> = arr.iter()
+                .map(|item| value_to_py(py, item))
+                .collect();
+            Ok(PyList::new(py, items?).into())
         },
         BorrowedValue::Object(map) => {
             let dict = PyDict::new(py);
