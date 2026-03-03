@@ -2,6 +2,7 @@ use nom::{
     branch::alt,
     bytes::complete::tag,
     character::complete::{alphanumeric1, char, digit1, multispace0},
+    bytes::complete::take_till,
     combinator::{map, map_res, opt, recognize},
     multi::{many1, separated_list1, many0},
     sequence::{delimited, pair, preceded, separated_pair, tuple},
@@ -133,7 +134,7 @@ fn parse_literal(input: &str) -> IResult<&str, Literal> {
         map(tag("false"), |_| Literal::Bool(false)),
         map(tag("null"), |_| Literal::Null),
         map(
-            delimited(char('"'), recognize(many0(alt((alphanumeric1, tag("_"), tag("-"), tag(" "))))), char('"')),
+            delimited(char('"'), take_till(|c| c == '"'), char('"')),
             |s: &str| Literal::String(s.to_string())
         ),
         map(
