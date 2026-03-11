@@ -1,9 +1,9 @@
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_till},
-    character::complete::{alphanumeric1, char, digit1, multispace0},
+    bytes::complete::{tag, take_while},
+    character::complete::{alpha1, char, digit1, multispace0},
     combinator::{map, map_res, opt, recognize},
-    multi::{many1, separated_list1, many0},
+    multi::{many1, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, tuple},
     IResult,
 };
@@ -44,8 +44,8 @@ fn parse_dot(input: &str) -> IResult<&str, &str> {
 
 fn parse_word(input: &str) -> IResult<&str, &str> {
     recognize(pair(
-        alt((alphanumeric1, tag("_"))),
-        opt(recognize(many0(alt((alphanumeric1, tag("_"), tag("-"))))))
+        alt((alpha1, tag("_"))),
+        take_while(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
     ))(input)
 }
 fn parse_field(input: &str) -> IResult<&str, RustyFilter> {
@@ -127,14 +127,36 @@ fn parse_compare_op(input: &str) -> IResult<&str, CompareOp> {
     ))(input)
 }
 
+fn parse_string_contents(input: &str) -> IResult<&str, String> {
+    let mut result = String::new();
+    let mut chars = input.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '"' => return Ok((&input[i..], result)),
+            '\\' => match chars.next() {
+                Some((_, '"'))  => result.push('"'),
+                Some((_, '\\')) => result.push('\\'),
+                Some((_, 'n'))  => result.push('\n'),
+                Some((_, 't'))  => result.push('\t'),
+                Some((_, 'r'))  => result.push('\r'),
+                Some((_, '/'))  => result.push('/'),
+                _ => return Err(nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Char))),
+            },
+            _ => result.push(c),
+        }
+    }
+    // reached end of input without closing quote
+    Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Char)))
+}
+
 fn parse_literal(input: &str) -> IResult<&str, Literal> {
     alt((
         map(tag("true"), |_| Literal::Bool(true)),
         map(tag("false"), |_| Literal::Bool(false)),
         map(tag("null"), |_| Literal::Null),
         map(
-            delimited(char('"'), take_till(|c| c == '"'), char('"')),
-            |s: &str| Literal::String(s.to_string())
+            delimited(char('"'), parse_string_contents, char('"')),
+            Literal::String
         ),
         map(
             map_res(

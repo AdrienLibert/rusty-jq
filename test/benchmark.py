@@ -65,7 +65,7 @@ def run_jaq_cli(query, json_str):
     except json.JSONDecodeError:
         return [json.loads(line) for line in output_str.splitlines()]
 
-def bench(name, fn, iters=1000):
+def bench(fn, iters=1000):
     for _ in range(100):
         fn()
         
@@ -108,9 +108,9 @@ def run_comparison():
         res_jaq = run_jaq()
         res_rust = run_rusty()
             
-        stats_jq = bench("jq", run_jq)
-        stats_jaq = bench("jaq", run_jaq)
-        stats_rust = bench("rusty", run_rusty)
+        stats_jq = bench(run_jq)
+        stats_jaq = bench(run_jaq)
+        stats_rust = bench(run_rusty)
 
         print(f"  jq (official): {stats_jq['median']:.4f} ms")
         print(f"  jaq (binary) : {stats_jaq['median']:.4f} ms")

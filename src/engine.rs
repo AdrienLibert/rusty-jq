@@ -6,7 +6,7 @@ use simd_json::prelude::*;
 use crate::parser::{RustyFilter, CompareOp, Literal};
 
 // raw math
-fn apply_op<T: PartialOrd + PartialEq>(a: &T, b: &T, op: &CompareOp) -> bool {
+fn apply_op<T: PartialOrd>(a: &T, b: &T, op: &CompareOp) -> bool {
     match op {
         CompareOp::Eq => a == b,
         CompareOp::Neq => a != b,
@@ -23,8 +23,11 @@ fn evaluate_condition(val: &BorrowedValue, op: &CompareOp, lit: &Literal) -> boo
         // Integer comparison
         (BorrowedValue::Static(StaticNode::I64(v)), Literal::Int(l)) => apply_op(v, l, op),
         (BorrowedValue::Static(StaticNode::U64(v)), Literal::Int(l)) => {
-            let v_as_i64 = *v as i64; // basic comparisons
-            apply_op(&v_as_i64, l, op)
+            match i64::try_from(*v) {
+                Ok(v_i64) => apply_op(&v_i64, l, op),
+                // v > i64::MAX, so v is always greater than any i64 literal
+                Err(_) => matches!(op, CompareOp::Neq | CompareOp::Gt | CompareOp::Gte),
+            }
         },
 
         // Float comparison
@@ -39,8 +42,8 @@ fn evaluate_condition(val: &BorrowedValue, op: &CompareOp, lit: &Literal) -> boo
         // null comparison (Only == and != make sense for null)
         (BorrowedValue::Static(StaticNode::Null), Literal::Null) => matches!(op, CompareOp::Eq),
         
-        // if types completely mismatch, drop it
-        _ => false,
+        // mismatched types: only != is true, everything else is false
+        _ => matches!(op, CompareOp::Neq),
     }
 }
 
