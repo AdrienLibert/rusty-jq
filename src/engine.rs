@@ -50,7 +50,7 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[Rusty
     let mut current_results: Vec<Cow<'a, BorrowedValue<'a>>> = vec![root];
 
     for filter in filters {
-        let mut next_results = Vec::new();
+        let mut next_results = Vec::with_capacity(current_results.len());
 
         for value in current_results {
             match filter {
@@ -59,7 +59,6 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[Rusty
                 },
                 RustyFilter::Field(key) => {
                     match value {
-                        // borrowed path, hand out a sub-reference without cloning
                         Cow::Borrowed(b_val) => {
                             if let Some(obj) = b_val.as_object() {
                                 if let Some(child) = obj.get(key.as_str()) {
@@ -67,11 +66,11 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[Rusty
                                 }
                             }
                         },
-                        // owned path, the child must be cloned out of the owned object
                         Cow::Owned(o_val) => {
-                            if let Some(obj) = o_val.as_object() {
-                                if let Some(child) = obj.get(key.as_str()) {
-                                    next_results.push(Cow::Owned(child.clone()));
+                            // consume the owned object and move the child out
+                            if let BorrowedValue::Object(mut obj) = o_val {
+                                if let Some(child) = obj.remove(key.as_str()) {
+                                    next_results.push(Cow::Owned(child));
                                 }
                             }
                         }
@@ -89,11 +88,12 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[Rusty
                             }
                         },
                         Cow::Owned(o_val) => {
-                             if let Some(arr) = o_val.as_array() {
+                            // consume the owned array and move the element out
+                            if let BorrowedValue::Array(mut arr) = o_val {
                                 let len = arr.len() as isize;
                                 let abs_idx = if *idx < 0 { len + *idx as isize } else { *idx as isize };
                                 if abs_idx >= 0 && (abs_idx as usize) < (len as usize) {
-                                    next_results.push(Cow::Owned(arr[abs_idx as usize].clone()));
+                                    next_results.push(Cow::Owned(arr.swap_remove(abs_idx as usize)));
                                 }
                             }
                         }
@@ -101,16 +101,15 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[Rusty
                 },
                 RustyFilter::Iterator => {
                     match value {
-                        // borrows from the parse buffer
                         Cow::Borrowed(b_val) => {
                             if let Some(arr) = b_val.as_array() {
-                                next_results.extend(arr.iter().map(|v| Cow::Borrowed(v)));
+                                next_results.extend(arr.iter().map(Cow::Borrowed));
                             }
                         },
-                        // the parent is an owned temporary
                         Cow::Owned(o_val) => {
-                            if let Some(arr) = o_val.as_array() {
-                                next_results.extend(arr.iter().cloned().map(|v| Cow::Owned(v)));
+                            // consume the owned array — move elements out, zero clones
+                            if let BorrowedValue::Array(arr) = o_val {
+                                next_results.extend(arr.into_iter().map(Cow::Owned));
                             }
                         }
                     }
@@ -147,13 +146,13 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[Rusty
                     }
                 }
                 RustyFilter::Select(path_filters, op, literal) => {
-                    // run the left-side path against the current value
-                    let test_results = process_rust_value(value.clone(), path_filters);
-                    // check if the extracted value matches our literal
-                    let passes = test_results.first().map_or(false, |test_val| {
-                    evaluate_condition(test_val, op, literal)
-                    });
-                    // if it passes, KEEP the original b_val
+                    // scope the borrow so test_results is dropped before we move value
+                    let passes = {
+                        let test_results = process_rust_value(Cow::Borrowed(&*value), path_filters);
+                        test_results.first().map_or(false, |test_val| {
+                            evaluate_condition(test_val, op, literal)
+                        })
+                    };
                     if passes {
                         next_results.push(value);
                     }

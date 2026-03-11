@@ -91,14 +91,19 @@ def run_comparison():
     for query in QUERIES:
         print(f"\nQuery: {query}")
 
+        # compile once outside the benchmark loop
+        jq_prog = jq.compile(query)
+        rusty_prog = rusty_jq.compile(query)
+
         def run_jq():
-            return list(jq.compile(query).input(text=JSON_TEXT))
+            return list(jq_prog.input(text=JSON_TEXT))
 
         def run_jaq():
             return run_jaq_cli(query, JSON_TEXT)
 
         def run_rusty():
-            return list(rusty_jq.compile(query).input(JSON_TEXT))
+            return list(rusty_prog.input(JSON_TEXT))
+
         res_jq = run_jq()
         res_jaq = run_jaq()
         res_rust = run_rusty()
