@@ -57,14 +57,14 @@ print(first_match) # "John"
 
 **Test Payload:** 1.49 MB JSON file containing 10,000 nested user objects.
 
-| Query | `jq` (official) | `jaq` (binary) | `rusty_jq` | Speedup vs `jq` |
-| --- | --- | --- | --- | --- |
-| `.metadata \| .timestamp` | 65.4 ms | 24.5 ms | **7.8 ms** | 🚀 **8.4x** |
-| `.users \| .[0] \| .profile \| .location` | 63.8 ms | 25.4 ms | **7.1 ms** | 🚀 **8.9x** |
-| `.users \| .[0] \| .transactions \| .[-1] \| .amount` | 63.5 ms | 24.4 ms | **7.0 ms** | 🚀 **9.1x** |
-| `.users \| .[] \| .id` | 69.9 ms | 39.1 ms | **8.3 ms** | 🚀 **8.4x** |
-| `.users \| .[] \| {user_id: .id}` | 96.0 ms | 57.5 ms | **16.9 ms** | 🚀 **5.7x** |
-| `.users \| .[] \| select(.id == 1)` | 84.6 ms | 50.0 ms | **10.9 ms** | 🚀 **7.7x** |
+| Query | `jq` (official) | `jaq` (binary) | `rusty_jq` | vs `jq` | vs `jaq` |
+| --- | --- | --- | --- | --- | --- |
+| `.metadata \| .timestamp` | 68.1 ms | 27.9 ms | **7.7 ms** | 🚀 **8.9x** | 🚀 **3.6x** |
+| `.users \| .[0] \| .profile \| .location` | 66.5 ms | 26.4 ms | **7.8 ms** | 🚀 **8.6x** | 🚀 **3.4x** |
+| `.users \| .[0] \| .transactions \| .[-1] \| .amount` | 65.9 ms | 26.8 ms | **7.1 ms** | 🚀 **9.3x** | 🚀 **3.8x** |
+| `.users \| .[] \| .id` | 72.0 ms | 40.4 ms | **8.3 ms** | 🚀 **8.7x** | 🚀 **4.9x** |
+| `.users \| .[] \| {user_id: .id, city: .profile \| .location}` | 96.2 ms | 61.0 ms | **15.5 ms** | 🚀 **6.2x** | 🚀 **3.9x** |
+| `.users \| .[] \| select(.id == 1) \| .name` | 82.3 ms | 42.5 ms | **10.5 ms** | 🚀 **7.9x** | 🚀 **4.1x** |
 
 ---
 
