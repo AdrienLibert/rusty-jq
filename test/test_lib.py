@@ -63,6 +63,12 @@ def json_string(complex_data):
 
     # 10. Select matching nothing, look for an ID that doesn't exist
     (".users | .[] | select(.id == 999) | .name", []),
+
+    # 11. Select with bool path + and
+    (".users | .[0] | .transactions | .[] | select(.amount > 100 and .currency == \"USD\") | .id", [102]),
+
+    # 12. Select with or + parenthesized grouping
+    (".users | .[] | select(.id == 1 or .profile.location == \"London\") | .name", ["John", "Bob"]),
 ])
 def test_jq_queries(complex_data, json_string, query, expected):
     program = rusty_jq.compile(query)

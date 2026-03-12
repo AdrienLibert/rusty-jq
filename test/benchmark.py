@@ -41,6 +41,10 @@ QUERIES = [
     ".users | .[] | {user_id: .id, city: .profile | .location}",
     # Select
     ".users | .[] | select(.id == 1) | .name",
+    # Select with and
+    ".users | .[] | select(.id > 0 and .profile.location == \"Hong Kong\") | .name",
+    # Select with or
+    ".users | .[] | select(.id == 1 or .profile.location == \"London\") | .name",
 ]
 
 def run_jaq_cli(query, json_str):

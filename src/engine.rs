@@ -3,7 +3,7 @@ use simd_json::BorrowedValue;
 use simd_json::borrowed::Object; 
 use simd_json::prelude::*;
      
-use crate::parser::{RustyFilter, CompareOp, Literal};
+use crate::parser::{RustyFilter, CompareOp, Literal, Condition, Expr};
 
 // raw math
 fn apply_op<T: PartialOrd>(a: &T, b: &T, op: &CompareOp) -> bool {
@@ -17,42 +17,93 @@ fn apply_op<T: PartialOrd>(a: &T, b: &T, op: &CompareOp) -> bool {
     }
 }
 
-// match simd-json's types against our Literal types
-fn evaluate_condition(val: &BorrowedValue, op: &CompareOp, lit: &Literal) -> bool {
-    match (val, lit) {
-        // Integer comparison
-        (BorrowedValue::Static(StaticNode::I64(v)), Literal::Int(l)) => apply_op(v, l, op),
-        (BorrowedValue::Static(StaticNode::U64(v)), Literal::Int(l)) => {
-            match i64::try_from(*v) {
-                Ok(v_i64) => apply_op(&v_i64, l, op),
-                // v > i64::MAX, so v is always greater than any i64 literal
+// convert a parsed Literal into a BorrowedValue so we can reuse compare_values
+fn literal_to_value(lit: &Literal) -> BorrowedValue<'static> {
+    match lit {
+        Literal::Int(i) => BorrowedValue::Static(StaticNode::I64(*i)),
+        Literal::Float(f) => BorrowedValue::Static(StaticNode::F64(*f)),
+        Literal::String(s) => BorrowedValue::String(Cow::Owned(s.clone())),
+        Literal::Bool(b) => BorrowedValue::Static(StaticNode::Bool(*b)),
+        Literal::Null => BorrowedValue::Static(StaticNode::Null),
+    }
+}
+
+fn is_truthy(val: &BorrowedValue) -> bool {
+    !matches!(val, BorrowedValue::Static(StaticNode::Null) | BorrowedValue::Static(StaticNode::Bool(false)))
+}
+
+fn compare_values(left: &BorrowedValue, op: &CompareOp, right: &BorrowedValue) -> bool {
+    match (left, right) {
+        (BorrowedValue::Static(StaticNode::I64(a)), BorrowedValue::Static(StaticNode::I64(b))) => apply_op(a, b, op),
+        (BorrowedValue::Static(StaticNode::U64(a)), BorrowedValue::Static(StaticNode::U64(b))) => apply_op(a, b, op),
+        (BorrowedValue::Static(StaticNode::I64(a)), BorrowedValue::Static(StaticNode::U64(b))) => {
+            match i64::try_from(*b) {
+                Ok(b_i64) => apply_op(a, &b_i64, op),
+                Err(_) => matches!(op, CompareOp::Neq | CompareOp::Lt | CompareOp::Lte),
+            }
+        }
+        (BorrowedValue::Static(StaticNode::U64(a)), BorrowedValue::Static(StaticNode::I64(b))) => {
+            match i64::try_from(*a) {
+                Ok(a_i64) => apply_op(&a_i64, b, op),
                 Err(_) => matches!(op, CompareOp::Neq | CompareOp::Gt | CompareOp::Gte),
             }
-        },
-
-        // Float comparison
-        (BorrowedValue::Static(StaticNode::F64(v)), Literal::Float(l)) => apply_op(v, l, op),
-        
-        // string comparison
-        (BorrowedValue::String(v), Literal::String(l)) => apply_op(&v.as_ref(), &l.as_str(), op),
-        
-        // boolean comparison
-        (BorrowedValue::Static(StaticNode::Bool(v)), Literal::Bool(l)) => apply_op(v, l, op),
-        
-        // null comparison (Only == and != make sense for null)
-        (BorrowedValue::Static(StaticNode::Null), Literal::Null) => matches!(op, CompareOp::Eq),
-        
-        // mismatched types: only != is true, everything else is false
+        }
+        (BorrowedValue::Static(StaticNode::F64(a)), BorrowedValue::Static(StaticNode::F64(b))) => apply_op(a, b, op),
+        (BorrowedValue::Static(StaticNode::I64(a)), BorrowedValue::Static(StaticNode::F64(b))) => apply_op(&(*a as f64), b, op),
+        (BorrowedValue::Static(StaticNode::F64(a)), BorrowedValue::Static(StaticNode::I64(b))) => apply_op(a, &(*b as f64), op),
+        (BorrowedValue::Static(StaticNode::U64(a)), BorrowedValue::Static(StaticNode::F64(b))) => apply_op(&(*a as f64), b, op),
+        (BorrowedValue::Static(StaticNode::F64(a)), BorrowedValue::Static(StaticNode::U64(b))) => apply_op(a, &(*b as f64), op),
+        (BorrowedValue::String(a), BorrowedValue::String(b)) => apply_op(&a.as_ref(), &b.as_ref(), op),
+        (BorrowedValue::Static(StaticNode::Bool(a)), BorrowedValue::Static(StaticNode::Bool(b))) => apply_op(a, b, op),
+        (BorrowedValue::Static(StaticNode::Null), BorrowedValue::Static(StaticNode::Null)) => matches!(op, CompareOp::Eq | CompareOp::Lte | CompareOp::Gte),
         _ => matches!(op, CompareOp::Neq),
     }
 }
 
+fn evaluate_condition_tree(value: &BorrowedValue, condition: &Condition) -> bool {
+    match condition {
+        Condition::Comparison(path, op, expr) => {
+            let test_results = process_rust_value(Cow::Borrowed(value), path, None);
+            let lhs = match test_results.first() {
+                Some(v) => v,
+                None => return false,
+            };
+            match expr {
+                Expr::Literal(lit) => {
+                    let rhs = literal_to_value(lit);
+                    compare_values(lhs, op, &rhs)
+                }
+                Expr::Path(rhs_path) => {
+                    let rhs_results = process_rust_value(Cow::Borrowed(value), rhs_path, None);
+                    match rhs_results.first() {
+                        Some(r) => compare_values(lhs, op, r),
+                        None => false,
+                    }
+                }
+            }
+        }
+        Condition::BoolPath(path) => {
+            let results = process_rust_value(Cow::Borrowed(value), path, None);
+            results.first().map_or(false, |v| is_truthy(v))
+        }
+        Condition::And(left, right) => {
+            evaluate_condition_tree(value, left) && evaluate_condition_tree(value, right)
+        }
+        Condition::Or(left, right) => {
+            evaluate_condition_tree(value, left) || evaluate_condition_tree(value, right)
+        }
+        Condition::Not(inner) => {
+            !evaluate_condition_tree(value, inner)
+        }
+    }
+}
+
 // applies a chain of RustyFilter to a JSON value and returns all matching results
-pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[RustyFilter]) -> Vec<Cow<'a, BorrowedValue<'a>>> {
+pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[RustyFilter], limit: Option<usize>) -> Vec<Cow<'a, BorrowedValue<'a>>> {
     // seed the pipeline with the root value
     let mut current_results: Vec<Cow<'a, BorrowedValue<'a>>> = vec![root];
 
-    for filter in filters {
+    for (filter_idx, filter) in filters.iter().enumerate() {
         let mut next_results = Vec::with_capacity(current_results.len());
 
         for value in current_results {
@@ -122,7 +173,7 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[Rusty
 
                     for (key, sub_query) in pairs {
                         // recursively evaluate the sub-query for this field.
-                        let field_results = process_rust_value(value.clone(), sub_query);
+                        let field_results = process_rust_value(value.clone(), sub_query, None);
 
                         // if any field yields no results the whole object is dropped
                         if field_results.is_empty() {
@@ -130,7 +181,7 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[Rusty
                             break; 
                         }
 
-                        let mut new_product_objects = Vec::new();
+                        let mut new_product_objects = Vec::with_capacity(product_objects.len() * field_results.len());
                         for partial_obj in &product_objects {
                             for field_val in &field_results {
                                 let mut new_obj: Object = partial_obj.clone();
@@ -148,16 +199,16 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[Rusty
                         next_results.push(Cow::Owned(BorrowedValue::Object(Box::new(obj))));
                     }
                 }
-                RustyFilter::Select(path_filters, op, literal) => {
-                    // scope the borrow so test_results is dropped before we move value
-                    let passes = {
-                        let test_results = process_rust_value(Cow::Borrowed(&*value), path_filters);
-                        test_results.first().map_or(false, |test_val| {
-                            evaluate_condition(test_val, op, literal)
-                        })
-                    };
-                    if passes {
+                RustyFilter::Select(condition) => {
+                    if evaluate_condition_tree(&value, condition) {
                         next_results.push(value);
+                    }
+                }
+            }
+            if filter_idx == filters.len() - 1 {
+                if let Some(lim) = limit {
+                    if next_results.len() >= lim {
+                        break;
                     }
                 }
             }

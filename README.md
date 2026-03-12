@@ -65,6 +65,8 @@ print(first_match) # "John"
 | `.users \| .[] \| .id` | 72.0 ms | 40.4 ms | **8.3 ms** | 🚀 **8.7x** | 🚀 **4.9x** |
 | `.users \| .[] \| {user_id: .id, city: .profile \| .location}` | 96.2 ms | 61.0 ms | **15.5 ms** | 🚀 **6.2x** | 🚀 **3.9x** |
 | `.users \| .[] \| select(.id == 1) \| .name` | 82.3 ms | 42.5 ms | **10.5 ms** | 🚀 **7.9x** | 🚀 **4.1x** |
+| `.users \| .[] \| select(.id > 0 and .profile.location == "Hong Kong") \| .name` | 99.3 ms | 52.9 ms | **13.3 ms** | 🚀 **7.5x** | 🚀 **4.0x** |
+| `.users \| .[] \| select(.id == 1 or .profile.location == "London") \| .name` | 95.7 ms | 56.1 ms | **14.3 ms** | 🚀 **6.7x** | 🚀 **3.9x** |
 
 ---
 

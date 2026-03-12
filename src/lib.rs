@@ -66,7 +66,7 @@ impl RustyProgram {
         let mut bytes = json_text.as_bytes().to_vec();
         let json_data = simd_json::to_borrowed_value(&mut bytes)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-        let result = process_rust_value(Cow::Borrowed(&json_data), &self.filters);
+        let result = process_rust_value(Cow::Borrowed(&json_data), &self.filters, None);
         let items: PyResult<Vec<PyObject>> = result.iter()
             .map(|v| value_to_py(py, &*v))
             .collect();
@@ -77,7 +77,7 @@ impl RustyProgram {
         let mut bytes = json_text.as_bytes().to_vec();
         let json_data = simd_json::to_borrowed_value(&mut bytes)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
-        let result = process_rust_value(Cow::Borrowed(&json_data), &self.filters);
+        let result = process_rust_value(Cow::Borrowed(&json_data), &self.filters, Some(1));
         match result.first() {
             Some(val) => value_to_py(py, &*val),
             None => Ok(py.None()),
