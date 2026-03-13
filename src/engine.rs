@@ -204,6 +204,13 @@ pub fn process_rust_value<'a>(root: Cow<'a, BorrowedValue<'a>>, filters: &[Rusty
                         next_results.push(value);
                     }
                 }
+                RustyFilter::Comma(branches) => {
+                    for branch in branches {
+                        next_results.extend(
+                            process_rust_value(value.clone(), branch, None)
+                        );
+                    }
+                }
             }
             if filter_idx == filters.len() - 1 {
                 if let Some(lim) = limit {

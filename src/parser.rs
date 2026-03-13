@@ -51,6 +51,7 @@ pub enum RustyFilter {
     Iterator,
     Object(Vec<(String, Vec<RustyFilter>)>),
     Select(Condition),
+    Comma(Vec<Vec<RustyFilter>>),
 }
 
 fn parse_dot(input: &str) -> IResult<&str, &str> {
@@ -111,7 +112,7 @@ fn parse_key_value_pair(input: &str) -> IResult<&str, (String, Vec<RustyFilter>)
         separated_pair(
             parse_word,
             delimited(multispace0, char(':'), multispace0),
-            parse_query,
+            parse_pipeline,
         ),
         |(k, v)| (k.to_string(), v),
     )(input)
@@ -288,14 +289,14 @@ fn parse_keyword_null(input: &str) -> IResult<&str, &str> {
 fn parse_expr(input: &str) -> IResult<&str, Expr> {
     alt((
         map(parse_literal, Expr::Literal),
-        map(parse_query, Expr::Path),
+        map(parse_pipeline, Expr::Path),
     ))(input)
 }
 
 // parse a comparison or bare boolean path
 // path [op expr] [| not]
 fn parse_comparison_or_bool_path(input: &str) -> IResult<&str, Condition> {
-    let (rest, path) = parse_query(input)?;
+    let (rest, path) = parse_pipeline(input)?;
     // try to parse an operator + expression
     if let Ok((rest2, (_, op, _, expr, _))) = tuple((
         multispace0::<&str, nom::error::Error<&str>>,
@@ -419,13 +420,42 @@ fn parse_single_filter(input: &str) -> IResult<&str, RustyFilter> {
     ))(input)
 }
 
-// parses a full jq-style query string into a list of RustyFilter
-pub fn parse_query(input: &str) -> IResult<&str, Vec<RustyFilter>> {
-    // many1 loops until it can't parse anymore
+// parses a pipeline: sequence of filters with optional | separators (no commas)
+// used internally by object values, select conditions, etc.
+fn parse_pipeline(input: &str) -> IResult<&str, Vec<RustyFilter>> {
     many1(
         preceded(
-            opt(delimited(multispace0, char('|'), multispace0)), 
+            opt(delimited(multispace0, char('|'), multispace0)),
             parse_single_filter
         )
     )(input)
+}
+
+// parses a chain of consecutive filters (no pipe, no comma)
+fn parse_filter_chain(input: &str) -> IResult<&str, Vec<RustyFilter>> {
+    many1(parse_single_filter)(input)
+}
+
+// parses a comma-separated segment: chain (, chain)*
+// if single chain, returns it as-is; if multiple, wraps in Comma
+fn parse_comma_segment(input: &str) -> IResult<&str, Vec<RustyFilter>> {
+    let (rest, chains) = separated_list1(
+        delimited(multispace0, char(','), multispace0),
+        parse_filter_chain
+    )(input)?;
+    if chains.len() == 1 {
+        Ok((rest, chains.into_iter().next().unwrap()))
+    } else {
+        Ok((rest, vec![RustyFilter::Comma(chains)]))
+    }
+}
+
+// top-level query: pipe-separated comma segments
+// pipe has lowest precedence, comma has higher precedence
+pub fn parse_query(input: &str) -> IResult<&str, Vec<RustyFilter>> {
+    let (rest, segments) = separated_list1(
+        delimited(multispace0, char('|'), multispace0),
+        parse_comma_segment
+    )(input)?;
+    Ok((rest, segments.into_iter().flatten().collect()))
 }

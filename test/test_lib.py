@@ -69,6 +69,9 @@ def json_string(complex_data):
 
     # 12. Select with or + parenthesized grouping
     (".users | .[] | select(.id == 1 or .profile.location == \"London\") | .name", ["John", "Bob"]),
+
+    # 13. Comma operator — multiple outputs per element
+    (".users | .[] | .name, .id", ["John", 1, "Bob", 2]),
 ])
 def test_jq_queries(complex_data, json_string, query, expected):
     program = rusty_jq.compile(query)
