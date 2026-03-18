@@ -45,8 +45,31 @@ QUERIES = [
     ".users | .[] | select(.id > 0 and .profile.location == \"Hong Kong\") | .name",
     # Select with or
     ".users | .[] | select(.id == 1 or .profile.location == \"London\") | .name",
+    # Parenthesized grouping
+    ".users | .[] | select(.id > 0 and (.profile.location == \"Hong Kong\" or .profile.location == \"London\")) | .name",
+    # Arithmetic
+    ".users | .[] | .id * 10 + 1",
     # Comma
     ".users | .[] | .name, .id",
+    # --- v2.2.0: Builtins & Syntax ---
+    # Length builtin
+    ".users | length",
+    # String transformation
+    ".users | .[] | .name | ascii_upcase",
+    # Keys extraction
+    ".users | .[] | .profile | keys",
+    # Slicing
+    ".users | .[0:100] | .[] | .name",
+    # Modulo
+    ".users | .[] | .id % 2",
+    # String concat with literal
+    ".users | .[] | .name + \" Doe\"",
+    # has check
+    ".users | .[] | has(\"name\")",
+    # Split + join pipeline
+    ".users | .[] | .profile | .title | split(\" \") | join(\"-\")",
+    # Select with builtin condition
+    ".users | .[] | select(.name | startswith(\"J\")) | .id",
 ]
 
 def run_jaq_cli(query, json_str):

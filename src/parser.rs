@@ -42,6 +42,39 @@ pub enum Condition {
     Not(Box<Condition>),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ArithOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+}
+
+#[derive(Debug, Clone)]
+pub enum Builtin0 {
+    Length, Keys, KeysUnsorted, Values, Type,
+    Reverse, Sort, Flatten, Add, Min, Max, Unique,
+    First, Last, Not, Empty,
+    Tostring, Tonumber,
+    ToEntries, FromEntries,
+    AsciiDowncase, AsciiUpcase,
+    Tojson, Fromjson,
+    Explode, Implode,
+    Floor, Ceil, Round, Sqrt, Fabs,
+    Nan, Infinite, Isinfinite, Isnan, Isnormal,
+    Recurse,
+}
+
+#[derive(Debug, Clone)]
+pub enum Builtin1 {
+    Has, Startswith, Endswith, Contains, Inside,
+    Split, Join, Ltrimstr, Rtrimstr,
+    FlattenDepth,
+    Index, Rindex, Indices,
+    Limit,
+}
+
 // Represents filters operation in a jq-style query
 #[derive(Debug, Clone)]
 pub enum RustyFilter {
@@ -52,6 +85,24 @@ pub enum RustyFilter {
     Object(Vec<(String, Vec<RustyFilter>)>),
     Select(Condition),
     Comma(Vec<Vec<RustyFilter>>),
+    Arithmetic(Vec<RustyFilter>, ArithOp, Vec<RustyFilter>),
+    LiteralValue(Literal),
+    Builtin0(Builtin0),
+    Builtin1(Builtin1, Literal),
+    RecurseDescent,
+    Slice(Option<i64>, Option<i64>),
+}
+
+// keyword parser with word-boundary check
+fn parse_keyword<'a>(kw: &'static str) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str> {
+    move |input: &'a str| {
+        let (rest, matched) = tag(kw)(input)?;
+        if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
+            Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag)))
+        } else {
+            Ok((rest, matched))
+        }
+    }
 }
 
 fn parse_dot(input: &str) -> IResult<&str, &str> {
@@ -67,9 +118,9 @@ fn parse_word(input: &str) -> IResult<&str, &str> {
 fn parse_field(input: &str) -> IResult<&str, RustyFilter> {
     map(
         preceded(
-            parse_dot, 
+            parse_dot,
             parse_word
-        ), 
+        ),
         |s: &str| RustyFilter::Field(s.to_string())
     )(input)
 }
@@ -91,11 +142,33 @@ fn parse_index(input: &str) -> IResult<&str, RustyFilter> {
     )(input)
 }
 
+fn parse_slice(input: &str) -> IResult<&str, RustyFilter> {
+    preceded(
+        parse_dot,
+        delimited(
+            char('['),
+            map(
+                tuple((
+                    opt(map_res(recognize(pair(opt(char('-')), digit1)), |s: &str| s.parse::<i64>())),
+                    char(':'),
+                    opt(map_res(recognize(pair(opt(char('-')), digit1)), |s: &str| s.parse::<i64>())),
+                )),
+                |(start, _, end)| RustyFilter::Slice(start, end),
+            ),
+            char(']'),
+        ),
+    )(input)
+}
+
 fn parse_iterator(input: &str) -> IResult<&str, RustyFilter> {
     map(
         preceded(parse_dot, tag("[]")),
         |_| RustyFilter::Iterator
     )(input)
+}
+
+fn parse_recursive_descent(input: &str) -> IResult<&str, RustyFilter> {
+    map(tag(".."), |_| RustyFilter::RecurseDescent)(input)
 }
 
 fn parse_identity(input: &str) -> IResult<&str, RustyFilter> {
@@ -209,16 +282,16 @@ fn parse_string_contents(input: &str) -> IResult<&str, String> {
 
 fn parse_literal(input: &str) -> IResult<&str, Literal> {
     alt((
-        map(parse_keyword_true, |_| Literal::Bool(true)),
-        map(parse_keyword_false, |_| Literal::Bool(false)),
-        map(parse_keyword_null, |_| Literal::Null),
+        map(parse_keyword("true"), |_| Literal::Bool(true)),
+        map(parse_keyword("false"), |_| Literal::Bool(false)),
+        map(parse_keyword("null"), |_| Literal::Null),
         map(
             delimited(char('"'), parse_string_contents, char('"')),
             Literal::String
         ),
         map(
             map_res(
-                recognize(tuple((opt(char('-')), digit1, char('.'), digit1))), 
+                recognize(tuple((opt(char('-')), digit1, char('.'), digit1))),
                 |s: &str| s.parse::<f64>()
             ),
             Literal::Float
@@ -228,61 +301,6 @@ fn parse_literal(input: &str) -> IResult<&str, Literal> {
             Literal::Int
         ),
     ))(input)
-}
-
-// keyword parsers — ensure word boundary so `.and_field` isn't matched as `and`
-fn parse_keyword_and(input: &str) -> IResult<&str, &str> {
-    let (rest, matched) = tag("and")(input)?;
-    if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
-        Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag)))
-    } else {
-        Ok((rest, matched))
-    }
-}
-
-fn parse_keyword_or(input: &str) -> IResult<&str, &str> {
-    let (rest, matched) = tag("or")(input)?;
-    if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
-        Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag)))
-    } else {
-        Ok((rest, matched))
-    }
-}
-
-fn parse_keyword_not(input: &str) -> IResult<&str, &str> {
-    let (rest, matched) = tag("not")(input)?;
-    if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
-        Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag)))
-    } else {
-        Ok((rest, matched))
-    }
-}
-
-fn parse_keyword_true(input: &str) -> IResult<&str, &str> {
-    let (rest, matched) = tag("true")(input)?;
-    if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
-        Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag)))
-    } else {
-        Ok((rest, matched))
-    }
-}
-
-fn parse_keyword_false(input: &str) -> IResult<&str, &str> {
-    let (rest, matched) = tag("false")(input)?;
-    if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
-        Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag)))
-    } else {
-        Ok((rest, matched))
-    }
-}
-
-fn parse_keyword_null(input: &str) -> IResult<&str, &str> {
-    let (rest, matched) = tag("null")(input)?;
-    if rest.starts_with(|c: char| c.is_alphanumeric() || c == '_') {
-        Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag)))
-    } else {
-        Ok((rest, matched))
-    }
 }
 
 // parse an expression: literal or path
@@ -310,7 +328,7 @@ fn parse_comparison_or_bool_path(input: &str) -> IResult<&str, Condition> {
             multispace0::<&str, nom::error::Error<&str>>,
             char('|'),
             multispace0,
-            parse_keyword_not,
+            parse_keyword("not"),
         ))(rest2) {
             Ok((rest3, Condition::Not(Box::new(Condition::Comparison(path, op, expr)))))
         } else {
@@ -322,7 +340,7 @@ fn parse_comparison_or_bool_path(input: &str) -> IResult<&str, Condition> {
             multispace0::<&str, nom::error::Error<&str>>,
             char('|'),
             multispace0,
-            parse_keyword_not,
+            parse_keyword("not"),
         ))(rest) {
             Ok((rest2, Condition::Not(Box::new(Condition::BoolPath(path)))))
         } else {
@@ -347,7 +365,7 @@ fn parse_condition_atom(input: &str) -> IResult<&str, Condition> {
 fn parse_condition_not(input: &str) -> IResult<&str, Condition> {
     alt((
         map(
-            preceded(pair(parse_keyword_not, multispace0), parse_condition_atom),
+            preceded(pair(parse_keyword("not"), multispace0), parse_condition_atom),
             |c| Condition::Not(Box::new(c)),
         ),
         parse_condition_atom,
@@ -360,7 +378,7 @@ fn parse_condition_and(input: &str) -> IResult<&str, Condition> {
     loop {
         let try_and = tuple((
             multispace0::<&str, nom::error::Error<&str>>,
-            parse_keyword_and,
+            parse_keyword("and"),
             multispace0,
         ))(rest);
         match try_and {
@@ -381,7 +399,7 @@ fn parse_condition(input: &str) -> IResult<&str, Condition> {
     loop {
         let try_or = tuple((
             multispace0::<&str, nom::error::Error<&str>>,
-            parse_keyword_or,
+            parse_keyword("or"),
             multispace0,
         ))(rest);
         match try_or {
@@ -408,12 +426,101 @@ fn parse_select(input: &str) -> IResult<&str, RustyFilter> {
     )(input)
 }
 
+// no-arg builtins
+fn parse_builtin0(input: &str) -> IResult<&str, RustyFilter> {
+    alt((
+        alt((
+            map(parse_keyword("length"), |_| RustyFilter::Builtin0(Builtin0::Length)),
+            map(parse_keyword("keys_unsorted"), |_| RustyFilter::Builtin0(Builtin0::KeysUnsorted)),
+            map(parse_keyword("keys"), |_| RustyFilter::Builtin0(Builtin0::Keys)),
+            map(parse_keyword("values"), |_| RustyFilter::Builtin0(Builtin0::Values)),
+            map(parse_keyword("type"), |_| RustyFilter::Builtin0(Builtin0::Type)),
+            map(parse_keyword("reverse"), |_| RustyFilter::Builtin0(Builtin0::Reverse)),
+            map(parse_keyword("sort"), |_| RustyFilter::Builtin0(Builtin0::Sort)),
+            map(parse_keyword("flatten"), |_| RustyFilter::Builtin0(Builtin0::Flatten)),
+            map(parse_keyword("add"), |_| RustyFilter::Builtin0(Builtin0::Add)),
+            map(parse_keyword("min"), |_| RustyFilter::Builtin0(Builtin0::Min)),
+            map(parse_keyword("max"), |_| RustyFilter::Builtin0(Builtin0::Max)),
+            map(parse_keyword("unique"), |_| RustyFilter::Builtin0(Builtin0::Unique)),
+            map(parse_keyword("first"), |_| RustyFilter::Builtin0(Builtin0::First)),
+            map(parse_keyword("last"), |_| RustyFilter::Builtin0(Builtin0::Last)),
+            map(parse_keyword("not"), |_| RustyFilter::Builtin0(Builtin0::Not)),
+            map(parse_keyword("empty"), |_| RustyFilter::Builtin0(Builtin0::Empty)),
+            map(parse_keyword("tostring"), |_| RustyFilter::Builtin0(Builtin0::Tostring)),
+            map(parse_keyword("tonumber"), |_| RustyFilter::Builtin0(Builtin0::Tonumber)),
+            map(parse_keyword("to_entries"), |_| RustyFilter::Builtin0(Builtin0::ToEntries)),
+            map(parse_keyword("from_entries"), |_| RustyFilter::Builtin0(Builtin0::FromEntries)),
+            map(parse_keyword("ascii_downcase"), |_| RustyFilter::Builtin0(Builtin0::AsciiDowncase)),
+        )),
+        alt((
+            map(parse_keyword("ascii_upcase"), |_| RustyFilter::Builtin0(Builtin0::AsciiUpcase)),
+            map(parse_keyword("tojson"), |_| RustyFilter::Builtin0(Builtin0::Tojson)),
+            map(parse_keyword("fromjson"), |_| RustyFilter::Builtin0(Builtin0::Fromjson)),
+            map(parse_keyword("explode"), |_| RustyFilter::Builtin0(Builtin0::Explode)),
+            map(parse_keyword("implode"), |_| RustyFilter::Builtin0(Builtin0::Implode)),
+            map(parse_keyword("floor"), |_| RustyFilter::Builtin0(Builtin0::Floor)),
+            map(parse_keyword("ceil"), |_| RustyFilter::Builtin0(Builtin0::Ceil)),
+            map(parse_keyword("round"), |_| RustyFilter::Builtin0(Builtin0::Round)),
+            map(parse_keyword("sqrt"), |_| RustyFilter::Builtin0(Builtin0::Sqrt)),
+            map(parse_keyword("fabs"), |_| RustyFilter::Builtin0(Builtin0::Fabs)),
+            map(parse_keyword("nan"), |_| RustyFilter::Builtin0(Builtin0::Nan)),
+            map(parse_keyword("infinite"), |_| RustyFilter::Builtin0(Builtin0::Infinite)),
+            map(parse_keyword("isinfinite"), |_| RustyFilter::Builtin0(Builtin0::Isinfinite)),
+            map(parse_keyword("isnan"), |_| RustyFilter::Builtin0(Builtin0::Isnan)),
+            map(parse_keyword("isnormal"), |_| RustyFilter::Builtin0(Builtin0::Isnormal)),
+            map(parse_keyword("recurse"), |_| RustyFilter::Builtin0(Builtin0::Recurse)),
+        )),
+    ))(input)
+}
+
+// helper: parse "keyword(" literal ")"
+fn parse_builtin1_call<'a>(kw: &'static str, b: Builtin1) -> impl FnMut(&'a str) -> IResult<&'a str, RustyFilter> {
+    move |input: &'a str| {
+        let (rest, _) = parse_keyword(kw)(input)?;
+        let (rest, _) = multispace0(rest)?;
+        let (rest, _) = char('(')(rest)?;
+        let (rest, _) = multispace0(rest)?;
+        let (rest, lit) = parse_literal(rest)?;
+        let (rest, _) = multispace0(rest)?;
+        let (rest, _) = char(')')(rest)?;
+        Ok((rest, RustyFilter::Builtin1(b.clone(), lit)))
+    }
+}
+
+// 1-arg builtins
+fn parse_builtin1(input: &str) -> IResult<&str, RustyFilter> {
+    alt((
+        alt((
+            parse_builtin1_call("has", Builtin1::Has),
+            parse_builtin1_call("startswith", Builtin1::Startswith),
+            parse_builtin1_call("endswith", Builtin1::Endswith),
+            parse_builtin1_call("contains", Builtin1::Contains),
+            parse_builtin1_call("inside", Builtin1::Inside),
+            parse_builtin1_call("split", Builtin1::Split),
+            parse_builtin1_call("join", Builtin1::Join),
+            parse_builtin1_call("ltrimstr", Builtin1::Ltrimstr),
+            parse_builtin1_call("rtrimstr", Builtin1::Rtrimstr),
+        )),
+        alt((
+            parse_builtin1_call("flatten", Builtin1::FlattenDepth),
+            parse_builtin1_call("indices", Builtin1::Indices),
+            parse_builtin1_call("index", Builtin1::Index),
+            parse_builtin1_call("rindex", Builtin1::Rindex),
+            parse_builtin1_call("limit", Builtin1::Limit),
+        )),
+    ))(input)
+}
+
 // parses any single filter token
 fn parse_single_filter(input: &str) -> IResult<&str, RustyFilter> {
     alt((
         parse_select,
+        parse_builtin1,
+        parse_builtin0,
         parse_iterator,
+        parse_slice,
         parse_index,
+        parse_recursive_descent,
         parse_field,
         parse_object,
         parse_identity
@@ -422,26 +529,92 @@ fn parse_single_filter(input: &str) -> IResult<&str, RustyFilter> {
 
 // parses a pipeline: sequence of filters with optional | separators (no commas)
 // used internally by object values, select conditions, etc.
+// arithmetic-aware so `.price + .tax` works inside objects and select
 fn parse_pipeline(input: &str) -> IResult<&str, Vec<RustyFilter>> {
-    many1(
+    let (rest, segments) = many1(
         preceded(
             opt(delimited(multispace0, char('|'), multispace0)),
-            parse_single_filter
+            parse_add_sub
         )
-    )(input)
+    )(input)?;
+    Ok((rest, segments.into_iter().flatten().collect()))
 }
 
-// parses a chain of consecutive filters (no pipe, no comma)
-fn parse_filter_chain(input: &str) -> IResult<&str, Vec<RustyFilter>> {
-    many1(parse_single_filter)(input)
+// arithmetic atom: a chain of single filters, or a bare literal (for `.price + 10`)
+fn parse_arith_atom(input: &str) -> IResult<&str, Vec<RustyFilter>> {
+    alt((
+        many1(parse_single_filter),
+        map(parse_literal, |lit| vec![RustyFilter::LiteralValue(lit)]),
+    ))(input)
 }
 
-// parses a comma-separated segment: chain (, chain)*
-// if single chain, returns it as-is; if multiple, wraps in Comma
+// mul/div/mod: arith_atom ((*|/|%) arith_atom)*
+fn parse_mul_div(input: &str) -> IResult<&str, Vec<RustyFilter>> {
+    let (mut rest, mut left) = parse_arith_atom(input)?;
+    loop {
+        let try_op = tuple((
+            multispace0::<&str, nom::error::Error<&str>>,
+            alt((
+                map(char('*'), |_| ArithOp::Mul),
+                map(char('/'), |_| ArithOp::Div),
+                map(char('%'), |_| ArithOp::Mod),
+            )),
+            multispace0,
+        ))(rest);
+        match try_op {
+            Ok((rest2, (_, op, _))) => {
+                let (rest3, right) = parse_arith_atom(rest2)?;
+                left = vec![RustyFilter::Arithmetic(left, op, right)];
+                rest = rest3;
+            }
+            Err(_) => break,
+        }
+    }
+    Ok((rest, left))
+}
+
+// add/sub: mul_div ((+|-) mul_div)*
+// `-` requires surrounding spaces to avoid ambiguity with hyphenated field names
+fn parse_add_sub(input: &str) -> IResult<&str, Vec<RustyFilter>> {
+    let (mut rest, mut left) = parse_mul_div(input)?;
+    loop {
+        // try `+` with optional whitespace
+        let try_add = tuple((
+            multispace0::<&str, nom::error::Error<&str>>,
+            map(char('+'), |_| ArithOp::Add),
+            multispace0,
+        ))(rest);
+        if let Ok((rest2, (_, op, _))) = try_add {
+            let (rest3, right) = parse_mul_div(rest2)?;
+            left = vec![RustyFilter::Arithmetic(left, op, right)];
+            rest = rest3;
+            continue;
+        }
+        // try `-` only when preceded by whitespace (to avoid `.a-b` field names)
+        if rest.starts_with(' ') || rest.starts_with('\t') || rest.starts_with('\n') {
+            let try_sub = tuple((
+                multispace0::<&str, nom::error::Error<&str>>,
+                map(char('-'), |_| ArithOp::Sub),
+                multispace0,
+            ))(rest);
+            if let Ok((rest2, (_, op, _))) = try_sub {
+                let (rest3, right) = parse_mul_div(rest2)?;
+                left = vec![RustyFilter::Arithmetic(left, op, right)];
+                rest = rest3;
+                continue;
+            }
+        }
+        break;
+    }
+    Ok((rest, left))
+}
+
+// parses a comma-separated segment: arith_expr (, arith_expr)*
+// if single expression, returns it as-is; if multiple, wraps in Comma
 fn parse_comma_segment(input: &str) -> IResult<&str, Vec<RustyFilter>> {
     let (rest, chains) = separated_list1(
         delimited(multispace0, char(','), multispace0),
-        parse_filter_chain
+        parse_add_sub
     )(input)?;
     if chains.len() == 1 {
         Ok((rest, chains.into_iter().next().unwrap()))
